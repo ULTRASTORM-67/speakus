@@ -77,6 +77,32 @@ tout le premier semestre 2027 sert de consolidation sur les 900 expressions.
 | 5 | B2+ -> C1 | **Vivre sur place** : douane, logement, transport, courses, medecin, banque, salle de sport, codes culturels |
 | 6 | C1 | **Fluidite** : phrases longues d'un bloc, connecteurs avances, pitch perso, negocier, humour, tics natifs |
 
+## Plusieurs utilisateurs
+
+Chaque personne cree son profil (prenom + avatar) : progression, serie, revisions
+et reglages sont separes. On bascule via la pastille en haut a droite.
+
+Les profils vivent dans le navigateur de l'appareil. Deux personnes sur le meme
+telephone = deux profils. La meme personne sur deux appareils = deux progressions
+distinctes (utiliser Exporter / Importer pour transferer).
+
+## Formulations alternatives acceptees
+
+Sur **Mise en situation** et **Conversation**, plusieurs reponses sont valables :
+l'app accepte aussi les autres expressions du meme theme. Cible "Long time no see"
+mais tu dis "How's it going?" -> accepte, avec rappel de la formulation visee.
+
+Sur **Decouverte** et **Shadowing**, c'est strict : l'exercice est de reproduire
+la phrase exacte, son rythme et sa prononciation. Y accepter un synonyme le viderait
+de son sens.
+
+Pour une phrase libre correcte mais absente du corpus, un bouton
+"Ma phrase etait juste aussi" permet de valider soi-meme. L'app n'a pas de moteur
+semantique : elle ne peut pas juger une formulation qu'elle ne connait pas.
+
+Le champ optionnel `alt: ["...", "..."]` sur une expression ajoute des variantes
+acceptees explicitement.
+
 ## Reglages (icone engrenage)
 
 - Nombre de nouvelles expressions par jour (3 / 5 / 8 / 10 / 12 / 15) — 8 = rythme 20 min

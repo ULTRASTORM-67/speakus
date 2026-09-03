@@ -4,9 +4,66 @@
 (function () {
   'use strict';
 
-  var LS = 'speakus_state_v1';
   var INTERVALS = [1, 1, 2, 4, 8, 16, 32, 64];  // jours, par boîte Leitner
   var DAY = 86400000;
+
+  /* ================= PROFILS ================= */
+  // Plusieurs personnes peuvent utiliser la même installation : chaque
+  // profil a sa propre progression, sous sa propre clé de stockage.
+  var PROF_LS = 'speakus_profiles_v1';
+  var AVATARS = ['🎧', '🔥', '🚀', '🎯', '🌊', '⚡', '🎸', '🏀', '🦅', '🌵'];
+  var PROFILES = loadProfiles();
+
+  function stateKey() { return 'speakus_state_v1__' + PROFILES.active; }
+
+  function loadProfiles() {
+    var p = null;
+    try { p = JSON.parse(localStorage.getItem(PROF_LS)); } catch (e) {}
+    if (p && p.list && p.list.length) return p;
+
+    // Reprise de l'ancienne installation mono-utilisateur
+    var old = null;
+    try { old = localStorage.getItem('speakus_state_v1'); } catch (e) {}
+    var id = 'p' + Date.now().toString(36);
+    var init = { list: [{ id: id, name: '', emoji: '🎧' }], active: id, needsName: true };
+    if (old) { try { localStorage.setItem('speakus_state_v1__' + id, old); } catch (e) {} }
+    try { localStorage.setItem(PROF_LS, JSON.stringify(init)); } catch (e) {}
+    return init;
+  }
+  function saveProfiles() {
+    try { localStorage.setItem(PROF_LS, JSON.stringify(PROFILES)); } catch (e) {}
+  }
+  function activeProfile() {
+    for (var i = 0; i < PROFILES.list.length; i++) {
+      if (PROFILES.list[i].id === PROFILES.active) return PROFILES.list[i];
+    }
+    return PROFILES.list[0];
+  }
+  function switchProfile(id) {
+    if (id === PROFILES.active) return;
+    Speech.stopSpeaking(); Speech.abort();
+    SES = null;
+    PROFILES.active = id; saveProfiles();
+    S = load();
+    go('home');
+    toast('Profil : ' + (activeProfile().name || 'sans nom'));
+  }
+  function addProfile(name, emoji) {
+    var id = 'p' + Date.now().toString(36) + Math.floor(Math.random() * 99);
+    PROFILES.list.push({ id: id, name: name, emoji: emoji });
+    PROFILES.active = id; saveProfiles();
+    S = fresh(); save();
+    go('home');
+  }
+  function deleteProfile(id) {
+    if (PROFILES.list.length < 2) { toast('Il faut au moins un profil'); return; }
+    PROFILES.list = PROFILES.list.filter(function (p) { return p.id !== id; });
+    try { localStorage.removeItem('speakus_state_v1__' + id); } catch (e) {}
+    if (PROFILES.active === id) PROFILES.active = PROFILES.list[0].id;
+    saveProfiles();
+    S = load();
+    go('home');
+  }
 
   /* ================= CORPUS ================= */
   var CORPUS = [];
@@ -22,8 +79,38 @@
       });
     });
   });
-  var BY_ID = {};
-  CORPUS.forEach(function (c) { BY_ID[c.id] = c; });
+  var BY_ID = {}, BY_THEME = {};
+  CORPUS.forEach(function (c) {
+    BY_ID[c.id] = c;
+    (BY_THEME[c.th] = BY_THEME[c.th] || []).push(c);
+  });
+
+  /**
+   * Sur une mise en situation ou une conversation, plusieurs formulations
+   * sont valables. On accepte donc aussi les autres expressions du même
+   * thème (« Saluer et entrer en contact », « Faire des plans »…) : elles
+   * remplissent la même fonction dans la même situation.
+   *
+   * Écarté volontairement : les tournures de moins de trois mots, sinon
+   * un « Bet. » ou un « For sure. » se retrouve par hasard dans n'importe
+   * quelle phrase longue et valide tout.
+   */
+  function findAlternative(it, hyps, th) {
+    var cands = [];
+    (it.alt || []).forEach(function (a) { cands.push({ en: a, fr: it.fr, why: 'variante' }); });
+    (BY_THEME[it.th] || []).forEach(function (o) {
+      if (o.id !== it.id) cands.push({ en: o.en, fr: o.fr, why: 'corpus' });
+    });
+    var best = null;
+    cands.forEach(function (c) {
+      if (Speech.tokens(c.en).length < 3) return;
+      var rr = Speech.bestOf(c.en, hyps, 'contains');
+      if (rr.score >= th && (!best || rr.score > best.score)) {
+        best = { en: c.en, fr: c.fr, score: rr.score, why: c.why };
+      }
+    });
+    return best;
+  }
 
   /* ================= ÉTAT ================= */
   function fresh() {
@@ -55,7 +142,7 @@
 
   function load() {
     try {
-      var raw = localStorage.getItem(LS);
+      var raw = localStorage.getItem(stateKey());
       if (!raw) return fresh();
       var o = JSON.parse(raw);
       var d = fresh();
@@ -66,14 +153,14 @@
   }
   function save() {
     S.updatedAt = Date.now();
-    try { localStorage.setItem(LS, JSON.stringify(S)); } catch (e) {}
+    try { localStorage.setItem(stateKey(), JSON.stringify(S)); } catch (e) {}
     if (window.Sync) window.Sync.push(S);
   }
   // Une autre machine (le téléphone) a pris de l'avance : on adopte son état.
   function adoptRemote(remote) {
     if (!remote || !remote.cards) return;
     S = remote;
-    try { localStorage.setItem(LS, JSON.stringify(S)); } catch (e) {}
+    try { localStorage.setItem(stateKey(), JSON.stringify(S)); } catch (e) {}
     if (!SES) go('home');
     toast('Progression synchronisée depuis ton autre appareil');
   }
@@ -183,6 +270,8 @@
     return '<div class="hdr">' +
       '<div class="logo"><span class="dot">🎙️</span><span>Speak<i>US</i></span></div>' +
       '<div class="sp"></div>' +
+      '<button class="chip" id="btnProfile" title="Changer de profil">' +
+      activeProfile().emoji + ' <b>' + esc((activeProfile().name || '?').split(' ')[0]) + '</b></button>' +
       '<div class="chip fire">🔥 <b>' + S.streak + '</b></div>' +
       '<div class="chip">⚡ <b>' + S.xp + '</b></div>' +
       syncChip() +
@@ -199,6 +288,107 @@
     if (!window.Sync) return '';
     return SYNC_LABEL[window.Sync.status()] || '';
   }
+  /* ---- écran de nommage, à la toute première ouverture ---- */
+  function renderWelcome() {
+    var pick = '🎧';
+    app.innerHTML =
+      '<div class="card hero glow fadein" style="margin-top:12vh">' +
+      '<div class="eyebrow">Bienvenue</div>' +
+      '<h1>Comment tu t\'appelles ?</h1>' +
+      '<p>Chacun son profil, chacun sa progression. Tu pourras en ajouter d\'autres après.</p>' +
+      '<input class="search" id="wName" placeholder="Ton prénom" maxlength="18" style="margin-top:20px">' +
+      '<div class="lb" style="font-weight:800;margin:6px 0 10px">Ton avatar</div>' +
+      '<div class="btnrow" id="wAv">' +
+      AVATARS.map(function (a, i) {
+        return '<button class="btn ghost sm av' + (i === 0 ? ' primary' : '') +
+               '" data-av="' + a + '" style="font-size:20px;padding:10px 14px">' + a + '</button>';
+      }).join('') + '</div>' +
+      '<button class="btn primary block" id="wGo" style="margin-top:20px">C\'est parti</button>' +
+      '</div>';
+
+    $$('[data-av]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        pick = b.getAttribute('data-av');
+        $$('.av').forEach(function (x) { x.className = 'btn ghost sm av'; });
+        b.className = 'btn primary sm av';
+      });
+    });
+    $('#wName').focus();
+    $('#wName').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('#wGo').click(); });
+    on('#wGo', 'click', function () {
+      var n = ($('#wName').value || '').trim();
+      if (!n) { toast('Mets au moins un prénom'); return; }
+      var p = activeProfile();
+      p.name = n; p.emoji = pick;
+      PROFILES.needsName = false;
+      saveProfiles();
+      go('home');
+    });
+  }
+
+  /* ---- sélecteur de profil ---- */
+  function openProfiles() {
+    var m = document.createElement('div');
+    m.className = 'modal';
+    m.innerHTML = '<div class="box"><h3 style="margin-bottom:6px">Profils</h3>' +
+      '<div class="muted" style="margin-bottom:14px">Chaque profil garde sa propre progression, sa série et ses révisions.</div>' +
+      '<div class="list">' +
+      PROFILES.list.map(function (p) {
+        var st = null;
+        try { st = JSON.parse(localStorage.getItem('speakus_state_v1__' + p.id)); } catch (e) {}
+        var n = st && st.cards ? Object.keys(st.cards).length : 0;
+        var streak = st ? (st.streak || 0) : 0;
+        return '<div class="item"' + (p.id === PROFILES.active ? ' style="border-color:rgba(124,92,255,.5)"' : '') + '>' +
+          '<span style="font-size:22px">' + p.emoji + '</span>' +
+          '<div class="m"><div class="en">' + esc(p.name || 'Sans nom') +
+          (p.id === PROFILES.active ? ' <span class="lvl">actif</span>' : '') + '</div>' +
+          '<div class="fr">' + n + ' expressions · série ' + streak + ' j</div></div>' +
+          (p.id === PROFILES.active ? '' : '<button class="btn ghost sm" data-sw="' + p.id + '">Basculer</button>') +
+          (PROFILES.list.length > 1 ? '<button class="play" data-del="' + p.id + '" title="Supprimer">🗑</button>' : '') +
+          '</div>';
+      }).join('') + '</div>' +
+      '<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:16px">' +
+      '<div class="lb" style="font-weight:800;margin-bottom:8px">Ajouter quelqu\'un</div>' +
+      '<input class="search" id="pName" placeholder="Prénom" maxlength="18" style="margin-bottom:10px">' +
+      '<div class="btnrow" style="margin-bottom:12px" id="pAv">' +
+      AVATARS.map(function (a, i) {
+        return '<button class="btn ghost sm pav' + (i === 0 ? ' primary' : '') +
+               '" data-pav="' + a + '" style="font-size:18px;padding:8px 12px">' + a + '</button>';
+      }).join('') + '</div>' +
+      '<button class="btn ok block" id="pAdd">Créer le profil</button></div>' +
+      '<button class="btn ghost block" id="pClose" style="margin-top:12px">Fermer</button></div>';
+    document.body.appendChild(m);
+
+    var pick = AVATARS[0];
+    $$('[data-pav]', m).forEach(function (b) {
+      b.addEventListener('click', function () {
+        pick = b.getAttribute('data-pav');
+        $$('.pav', m).forEach(function (x) { x.className = 'btn ghost sm pav'; });
+        b.className = 'btn primary sm pav';
+      });
+    });
+    $$('[data-sw]', m).forEach(function (b) {
+      b.addEventListener('click', function () { m.remove(); switchProfile(b.getAttribute('data-sw')); });
+    });
+    $$('[data-del]', m).forEach(function (b) {
+      b.addEventListener('click', function () {
+        var id = b.getAttribute('data-del');
+        var p = PROFILES.list.filter(function (x) { return x.id === id; })[0];
+        if (confirm('Supprimer le profil « ' + (p.name || 'Sans nom') + ' » et toute sa progression ?')) {
+          m.remove(); deleteProfile(id);
+        }
+      });
+    });
+    $('#pAdd', m).addEventListener('click', function () {
+      var n = ($('#pName', m).value || '').trim();
+      if (!n) { toast('Il faut un prénom'); return; }
+      m.remove(); addProfile(n, pick);
+      toast('Profil « ' + n +' » créé');
+    });
+    $('#pClose', m).addEventListener('click', function () { m.remove(); });
+    m.addEventListener('click', function (e) { if (e.target === m) m.remove(); });
+  }
+
   function nav(active) {
     var due = dueList().length;
     function b(k, i, l) {
@@ -218,6 +408,7 @@
       b.addEventListener('click', function () { go(b.getAttribute('data-nav')); });
     });
     on('#btnSettings', 'click', openSettings);
+    on('#btnProfile', 'click', openProfiles);
   }
   function go(view) {
     Speech.stopSpeaking(); Speech.abort();
@@ -746,6 +937,16 @@
     var pass = r.score >= passThreshold(st);
     var perfect = r.score >= 0.92;
 
+    // Formulation différente mais valable : seulement en production et en
+    // conversation. En découverte et en shadowing, l'exercice EST de
+    // reproduire la phrase donnée — y accepter un synonyme le viderait de
+    // son sens.
+    var altHit = null;
+    if (!pass && (st.t === 'produce' || st.t === 'roleplay')) {
+      altHit = findAlternative(it, hyps, passThreshold(st));
+      if (altHit) { pass = true; perfect = false; }
+    }
+
     // rendu mot à mot
     var words = r.diff.map(function (d) {
       if (d.w === null) return '<span class="w-extra">' + esc(d.heard) + '</span>';
@@ -758,7 +959,13 @@
 
     var cls = pass ? (perfect ? 'good' : 'mid') : 'bad';
     var msg, sub;
-    if (perfect) {
+    if (altHit) {
+      msg = 'Autre formulation — accepté';
+      sub = 'Tu as dit « ' + esc(altHit.en) + ' ». Ça marche dans cette situation. ' +
+            'Celle qu\'on travaillait : « ' + esc(it.en) + ' ».';
+      cls = 'mid';
+      pct = Math.round(altHit.score * 100);
+    } else if (perfect) {
       msg = 'Parfait 🔥';
       sub = st.t === 'shadow' ? 'Le débit y est. C\'est comme ça qu\'on sonne natif.' : 'Prononciation propre, ça sonne natif.';
     } else if (pass && missed) {
@@ -776,16 +983,25 @@
       sub = st.t === 'shadow' ? 'Découpe la phrase en deux, puis enchaîne.' : 'Ralentis, articule chaque mot, puis réessaie.';
     }
 
-    var html = '<div class="heard"><div class="lbl">Mot par mot — vert = net, orange = flou, rouge = raté</div>' +
-      '<div class="words">' + words + '</div>' +
-      '<div class="note" style="margin-top:10px;font-size:13px;color:var(--txt3);border-top:1px dashed var(--line);padding-top:8px">' +
-      'Entendu : « ' + esc(r.text || hyps[0]) + ' »</div></div>' +
+    var html = '<div class="heard">' +
+      (altHit
+        ? '<div class="lbl">Ce que tu as dit</div><div class="words w-ok">' + esc(hyps[0]) + '</div>'
+        : '<div class="lbl">Mot par mot — vert = net, orange = flou, rouge = raté</div>' +
+          '<div class="words">' + words + '</div>' +
+          '<div class="note" style="margin-top:10px;font-size:13px;color:var(--txt3);border-top:1px dashed var(--line);padding-top:8px">' +
+          'Entendu : « ' + esc(r.text || hyps[0]) + ' »</div>') +
+      '</div>' +
       '<div class="scorebox ' + cls + '"><div class="pct">' + pct + '%</div>' +
       '<div class="msg">' + msg + '<small>' + sub + '</small></div></div>';
 
     if (!pass) {
       html += '<div class="btnrow" style="margin-top:14px;justify-content:center">' +
         '<button class="btn ghost sm" id="fbSlow">🐢 Réécouter lentement</button>';
+      // L'app ne sait pas juger une phrase libre qui n'est pas dans le corpus.
+      // Sur une mise en situation, l'utilisateur tranche lui-même.
+      if (st.t === 'produce' || st.t === 'roleplay') {
+        html += '<button class="btn ghost sm" id="fbSelf">✓ Ma phrase était juste aussi</button>';
+      }
       if (SES.attempts >= 3 || st.t === 'shadow') html += '<button class="btn ghost sm" id="fbPass">Passer quand même</button>';
       html += '</div>';
     } else {
@@ -796,6 +1012,7 @@
     if (!pass && st.t !== 'shadow') reveal(it);
 
     on('#fbSlow', 'click', function () { Speech.speak(target, { rate: 0.6 }); });
+    on('#fbSelf', 'click', function () { reveal(it); nextStep(true); });
     on('#fbPass', 'click', function () { nextStep(false); });
     on('#fbNext', 'click', function () { nextStep(true, r.score); });
 
@@ -919,7 +1136,8 @@
     });
   }
   if (S.settings.voice) setTimeout(function () { Speech.setVoice(S.settings.voice); }, 600);
-  if (!CORPUS.length) {
+  if (PROFILES.needsName) { renderWelcome(); }
+  else if (!CORPUS.length) {
     app.innerHTML = '<div class="card"><h1>Corpus introuvable</h1><p class="muted">Les fichiers data/m1.js … m4.js ne sont pas chargés.</p></div>';
   } else {
     renderHome();
