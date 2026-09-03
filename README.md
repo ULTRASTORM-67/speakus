@@ -86,6 +86,17 @@ Les profils vivent dans le navigateur de l'appareil. Deux personnes sur le meme
 telephone = deux profils. La meme personne sur deux appareils = deux progressions
 distinctes (utiliser Exporter / Importer pour transferer).
 
+## Aide a la prononciation
+
+Sous chaque phrase, une ligne "Comment le dire" : transcription a la francaise,
+lisible sans rien connaitre a l'API. MAJUSCULES = syllabe accentuee.
+Chaque mot est cliquable pour l'entendre seul au ralenti. Le bouton "?" affiche
+la legende (th, dh, eu, ii, ai, aou, r americain...).
+
+`assets/phonetic.js` : dictionnaire de ~500 mots (83 % des occurrences du corpus)
+plus un moteur de regles pour le reste. C'est une approximation destinee a se
+faire comprendre, pas une transcription phonetique exacte.
+
 ## Formulations alternatives acceptees
 
 Sur **Mise en situation** et **Conversation**, plusieurs reponses sont valables :
@@ -96,9 +107,15 @@ Sur **Decouverte** et **Shadowing**, c'est strict : l'exercice est de reproduire
 la phrase exacte, son rythme et sa prononciation. Y accepter un synonyme le viderait
 de son sens.
 
-Pour une phrase libre correcte mais absente du corpus, un bouton
-"Ma phrase etait juste aussi" permet de valider soi-meme. L'app n'a pas de moteur
-semantique : elle ne peut pas juger une formulation qu'elle ne connait pas.
+Deuxieme filet : si la phrase dite porte les memes mots de sens que la cible
+(hors mots vides), elle est acceptee meme si elle n'existe nulle part dans le
+corpus. Cible "Nice to finally meet you", tu dis "I'm glad I can finally meet
+you" -> accepte (finally + meet). Seuil : 60 % des mots de sens, minimum deux.
+
+Troisieme filet : bouton "Ma phrase etait juste aussi" pour valider soi-meme.
+L'app n'a pas de moteur semantique — deux phrases synonymes sans vocabulaire
+commun ("give me a hand" / "help me out") lui echappent, c'est l'utilisateur
+qui tranche.
 
 Le champ optionnel `alt: ["...", "..."]` sur une expression ajoute des variantes
 acceptees explicitement.

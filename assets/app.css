@@ -105,6 +105,18 @@ input,select{font-family:inherit;font-size:inherit}
 .exbox .txt{font-size:16px;line-height:1.55}
 .exbox .note{margin-top:10px;font-size:13.5px;color:var(--txt2);border-top:1px dashed var(--line);padding-top:10px}
 
+/* ---- aide à la prononciation ---- */
+.phon{margin-top:14px;background:rgba(255,184,77,.07);border:1px solid rgba(255,184,77,.24);border-radius:14px;padding:12px 14px}
+.phon-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.phon-head .lbl{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#FFC978}
+.phon-help{width:20px;height:20px;border-radius:50%;background:rgba(255,184,77,.18);border:1px solid rgba(255,184,77,.4);color:#FFC978;font-size:12px;font-weight:900;line-height:1;display:grid;place-items:center}
+.phon-help:hover{background:rgba(255,184,77,.32)}
+.phon-line{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
+.phon-w{font-size:17px;font-weight:700;color:#FFDDA8;letter-spacing:.01em;padding:3px 7px;border-radius:8px;border:1px solid transparent;background:none;transition:.15s}
+button.phon-w{cursor:pointer;border-color:rgba(255,184,77,.2)}
+button.phon-w:hover{background:rgba(255,184,77,.16);border-color:rgba(255,184,77,.45)}
+.phon-w.phon-on{background:rgba(255,184,77,.34);color:#fff;transform:scale(1.06)}
+
 .cue{background:linear-gradient(135deg,rgba(124,92,255,.12),transparent);border:1px solid rgba(124,92,255,.25);border-radius:14px;padding:14px 16px;margin-bottom:16px}
 .cue .who{font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:var(--acc);margin-bottom:5px}
 .cue .line{font-size:18px;font-weight:700}

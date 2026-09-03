@@ -95,6 +95,45 @@
    * un « Bet. » ou un « For sure. » se retrouve par hasard dans n'importe
    * quelle phrase longue et valide tout.
    */
+  // Mots vides : ils ne portent pas le sens, on ne les compte pas.
+  var STOP = ('a an the to of in on at for it its is am are was were be been being do does did done ' +
+    'i you he she we they me him her us them my your his our their this that these those and or but ' +
+    'so if then than as with about from by will would can could should shall may might must have has ' +
+    'had not no yes very just really too also there here what who how when where why which some any ' +
+    'up out off over one').split(' ');
+  function contentWords(s) {
+    return Speech.tokens(s).filter(function (w) { return STOP.indexOf(w) < 0 && w.length > 1; });
+  }
+
+  /**
+   * Deuxième filet : la phrase dite n'est dans le corpus nulle part, mais
+   * elle porte les mêmes mots porteurs de sens que la cible.
+   *   cible « Nice to finally meet you »  ->  finally, meet
+   *   dit   « I'm glad I can finally meet you »  -> les deux y sont : accepté.
+   *   dit   « I'm glad you came out tonight »    -> aucun : refusé.
+   * Exigé : au moins 2 mots de sens dans la cible, et 60 % de couverture.
+   */
+  function coversMeaning(target, hyps) {
+    var want = contentWords(target);
+    if (want.length < 2) return null;
+    var best = null;
+    (hyps || []).forEach(function (h) {
+      var got = Speech.tokens(h);
+      var hit = want.filter(function (w) {
+        return got.some(function (g) {
+          if (g === w) return true;
+          var a = g.length, b = w.length;
+          return Math.min(a, b) > 3 && (g.indexOf(w) === 0 || w.indexOf(g) === 0);
+        });
+      });
+      var ratio = hit.length / want.length;
+      if (ratio >= 0.6 && (!best || ratio > best.ratio)) {
+        best = { ratio: ratio, said: h, hit: hit, missing: want.filter(function (w) { return hit.indexOf(w) < 0; }) };
+      }
+    });
+    return best;
+  }
+
   function findAlternative(it, hyps, th) {
     var cands = [];
     (it.alt || []).forEach(function (a) { cands.push({ en: a, fr: it.fr, why: 'variante' }); });
@@ -810,6 +849,7 @@
         '<div class="tags"><span class="tag lv">' + esc(it.lv) + '</span>' +
         '<span class="tag rg">' + esc(it.rg) + '</span>' +
         '<span class="tag">' + esc(it.th) + '</span></div></div>' +
+        phonBlock(it.en, 'phEn') +
         '<div class="exbox"><div class="lbl">En contexte</div>' +
         '<div class="txt">' + esc(it.ex) + '</div>' +
         (it.sit ? '<div class="note">💡 ' + esc(it.sit) + '</div>' : '') + '</div>' +
@@ -825,6 +865,7 @@
         '<div class="exbox" style="margin-top:0"><div class="lbl">La phrase</div>' +
         '<div class="txt" style="font-size:20px;font-weight:800;line-height:1.45">' + esc(it.ex) + '</div>' +
         '<div class="note">' + esc(it.en) + ' — ' + esc(it.fr) + '</div></div>' +
+        phonBlock(it.ex, 'phEx') +
         '<div class="btnrow" style="margin-top:14px;justify-content:center">' +
         '<button class="btn ghost sm" id="btnNative">🔊 Vitesse natif</button>' +
         '<button class="btn ghost sm" id="btnSlow">🐢 Au ralenti</button>' +
@@ -869,9 +910,69 @@
     on('#btnSkip', 'click', function () { nextStep(false); });
     on('#btnReveal', 'click', function () { reveal(it); });
 
+    bindPhon('phEn'); bindPhon('phEx');
     if (st.t === 'learn') setTimeout(function () { Speech.speak(it.en, { rate: S.settings.rate }); }, 250);
     if (st.t === 'shadow') setTimeout(function () { Speech.speak(it.ex, { rate: 1.08 }); }, 250);
     if (st.t === 'roleplay') setTimeout(function () { Speech.speak(it.cue, { rate: S.settings.rate }); }, 250);
+  }
+
+  /* ---- Aide à la prononciation ----
+     Une ligne lisible sous la phrase, et chaque mot cliquable pour
+     l'entendre seul, au ralenti, avec sa transcription. */
+  function phonBlock(text, id) {
+    if (!window.Phonetic) return '';
+    return '<div class="phon" id="' + id + '">' +
+      '<div class="phon-head"><span class="lbl">Comment le dire</span>' +
+      '<button class="phon-help" id="' + id + 'Help">?</button></div>' +
+      '<div class="phon-line">' +
+      text.split(/\s+/).map(function (w) {
+        var clean = w.replace(/[^A-Za-z']/g, '');
+        if (!clean) return '<span class="phon-w">' + esc(w) + '</span>';
+        return '<button class="phon-w" data-word="' + esc(clean) + '" title="Écouter ce mot">' +
+          esc(Phonetic.word(clean)) + '</button>';
+      }).join(' ') + '</div></div>';
+  }
+  function bindPhon(id) {
+    $$('#' + id + ' [data-word]').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var w = b.getAttribute('data-word');
+        Speech.speak(w, { rate: 0.55 });
+        b.classList.add('phon-on');
+        setTimeout(function () { b.classList.remove('phon-on'); }, 900);
+        toast(w + '  →  ' + Phonetic.word(w));
+      });
+    });
+    on('#' + id + 'Help', 'click', function () { openPhonHelp(); });
+  }
+  function openPhonHelp() {
+    var m = document.createElement('div');
+    m.className = 'modal';
+    m.innerHTML = '<div class="box"><h3 style="margin-bottom:12px">Lire la phonétique</h3>' +
+      '<div class="muted" style="margin-bottom:14px">Lis à voix haute comme si c\'était du français. ' +
+      'Ce n\'est pas parfait, mais un Américain te comprendra.</div>' +
+      '<div class="list">' +
+      [['MAJUSCULES', 'la syllabe sur laquelle tu appuies', 'FAÏ-ne-li'],
+       ['th', 'langue entre les dents, souffle', 'think → think'],
+       ['dh', 'pareil mais avec la voix', 'this → dhiss'],
+       ['eu', 'le son de "up", entre eu et a', 'but → beut'],
+       ['ii', 'i long et tendu', 'see → sii'],
+       ['i', 'i bref et relâché', 'sit → sit'],
+       ['aï / eï / ô', 'diphtongues glissées', 'my, day, go'],
+       ['aou', 'a puis ou, d\'un trait', 'now → naou'],
+       ['r', 'r américain : arrondi, jamais roulé', 'car → kâr'],
+       ['ng', 'n qui reste dans le nez', 'sing → sing'],
+       ['h', 'un vrai souffle, pas muet', 'here → hir']
+      ].map(function (r) {
+        return '<div class="item"><div class="m"><div class="en">' + r[0] + '</div>' +
+          '<div class="fr">' + r[1] + '</div></div>' +
+          '<span class="lvl" style="text-transform:none">' + r[2] + '</span></div>';
+      }).join('') + '</div>' +
+      '<div class="muted" style="margin-top:14px;font-size:13px">Touche un mot pour l\'entendre seul, au ralenti.</div>' +
+      '<button class="btn primary block" id="phClose" style="margin-top:16px">Compris</button></div>';
+    document.body.appendChild(m);
+    $('#phClose', m).addEventListener('click', function () { m.remove(); });
+    m.addEventListener('click', function (e) { if (e.target === m) m.remove(); });
   }
 
   function reveal(it) {
@@ -880,7 +981,9 @@
     if (z && !z.innerHTML) {
       z.innerHTML = '<div class="exbox" style="margin-top:16px"><div class="lbl">Réponse</div>' +
         '<div class="txt" style="font-size:22px;font-weight:900">' + esc(it.en) + '</div>' +
-        (it.ex ? '<div class="note">' + esc(it.ex) + '</div>' : '') + '</div>';
+        (it.ex ? '<div class="note">' + esc(it.ex) + '</div>' : '') + '</div>' +
+        phonBlock(it.en, 'phRev');
+      bindPhon('phRev');
       Speech.speak(it.en, { rate: S.settings.rate });
     }
   }
@@ -941,10 +1044,14 @@
     // conversation. En découverte et en shadowing, l'exercice EST de
     // reproduire la phrase donnée — y accepter un synonyme le viderait de
     // son sens.
-    var altHit = null;
+    var altHit = null, meaningHit = null;
     if (!pass && (st.t === 'produce' || st.t === 'roleplay')) {
       altHit = findAlternative(it, hyps, passThreshold(st));
       if (altHit) { pass = true; perfect = false; }
+      else {
+        meaningHit = coversMeaning(target, hyps);
+        if (meaningHit) { pass = true; perfect = false; }
+      }
     }
 
     // rendu mot à mot
@@ -965,6 +1072,13 @@
             'Celle qu\'on travaillait : « ' + esc(it.en) + ' ».';
       cls = 'mid';
       pct = Math.round(altHit.score * 100);
+    } else if (meaningHit) {
+      msg = 'Ta phrase à toi — accepté';
+      sub = 'Tu as dit ce qu\'il fallait dire' +
+            (meaningHit.missing.length ? ' (il manquait « ' + esc(meaningHit.missing.join(', ')) +' »)' : '') +
+            '. La version travaillée : « ' + esc(it.en) + ' ».';
+      cls = 'mid';
+      pct = Math.round(meaningHit.ratio * 100);
     } else if (perfect) {
       msg = 'Parfait 🔥';
       sub = st.t === 'shadow' ? 'Le débit y est. C\'est comme ça qu\'on sonne natif.' : 'Prononciation propre, ça sonne natif.';
@@ -984,7 +1098,7 @@
     }
 
     var html = '<div class="heard">' +
-      (altHit
+      ((altHit || meaningHit)
         ? '<div class="lbl">Ce que tu as dit</div><div class="words w-ok">' + esc(hyps[0]) + '</div>'
         : '<div class="lbl">Mot par mot — vert = net, orange = flou, rouge = raté</div>' +
           '<div class="words">' + words + '</div>' +
@@ -1019,7 +1133,7 @@
     if (pass) {
       // « Compris mais incomplet » : on continue, mais on laisse la porte ouverte
       // à un deuxième essai propre avant de passer à la suite.
-      if (missed && SES.attempts < 3) {
+      if (missed && !altHit && !meaningHit && SES.attempts < 3) {
         $('#fbNext').textContent = 'Continuer quand même →';
         $('#fb').insertAdjacentHTML('beforeend',
           '<div class="btnrow" style="margin-top:10px;justify-content:center">' +
