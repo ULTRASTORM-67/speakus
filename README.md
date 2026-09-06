@@ -131,12 +131,12 @@ acceptees explicitement.
 
 ## Ou sont mes donnees
 
-Version en ligne : sur le serveur (synchronise entre appareils) **et** en copie locale
-dans le navigateur. La pastille nuage en haut a droite indique l'etat :
-`☁︎ ✓` synchronise, `☁︎ ↑` en cours, `☁︎ !` synchro indisponible (la progression
-reste alors sur l'appareil).
+Dans le navigateur de chaque appareil (localStorage), en ligne comme en local.
+**Il n'y a pas de synchronisation automatique** : le PC et le telephone ont chacun
+leur progression. `assets/sync.js` existe mais reste inerte — il avait ete ecrit
+pour la version Artifact, qui a ete abandonnee.
 
-Version locale : uniquement dans le navigateur du PC.
+Consequence : ne vide pas les donnees du site, et exporte de temps en temps.
 
 Dans les reglages : **Exporter** produit un .json, **Importer** le recharge.
 Utile pour transferer la progression a la main si la synchro ne marche pas.
@@ -152,3 +152,52 @@ Format d'une entree :
  sit:"Tu croises un pote dans la rue.", // situation FR pour la production
  cue:"Hey! I thought that was you."}    // ce que dit l'interlocuteur en roleplay
 ```
+
+## Le correcteur de phrases libres
+
+Quand tu reponds a une consigne francaise ("Je te presente mon ami Alex") et que
+ta phrase ne colle pas au modele, l'app ne dit plus juste "rate". Elle repond
+aux trois questions qui comptent :
+
+1. **Est-ce que ce que j'ai dit est correct ?** — verdict : juste / compréhensible
+   mais pas naturel / faux / mal entendu par le micro.
+2. **Qu'est-ce que ma phrase veut dire ?** — la traduction de CE QUE TU AS DIT,
+   pas de ce qu'il fallait dire.
+3. **Alors qu'est-ce que je dois dire ?** — la version naturelle, avec le son et
+   la ligne phonetique.
+
+Si ta formulation est correcte et naturelle, elle est **acceptee** meme si ce
+n'est pas la phrase du jour. Dans ce cas le score mot-a-mot disparait : noter la
+prononciation d'une phrase contre un modele que tu n'as pas essaye n'apprend rien.
+
+Ca demande de juger une phrase libre, donc **ca ne marche que sur la version en
+ligne**. En local, l'app garde son comportement d'avant (score + reponse revelee).
+
+## Deployer le relais du correcteur
+
+Le correcteur est **inactif tant que le relais n'existe pas**. Voir
+`worker/DEPLOIEMENT.md` : compte Cloudflare gratuit, un Worker a creer,
+le code de `worker/speakus-coach.js` a coller, une liaison `AI` a ajouter.
+
+Une fois deploye, colle l'adresse du Worker dans `RELAIS` en haut de
+`assets/coach.js`, rebuild, push : le correcteur marche alors pour tous
+les appareils et toutes les personnes, sans reglage individuel.
+
+Pour tester avant de figer l'adresse : Reglages -> Correcteur -> coller
+l'adresse -> Tester. L'adresse saisie la est locale a l'appareil.
+
+## Mettre une session en pause
+
+Une session de 28 etapes ne se finit pas toujours d'une traite. La croix en
+haut a gauche ne jette plus la session : elle la **met en pause**.
+
+L'accueil affiche alors une carte "Session en pause — tu etais a l'etape X sur Y"
+avec **Reprendre** et **Abandonner**. Ca survit a la fermeture de l'onglet,
+au redemarrage du telephone, et au retour sur le site des jours plus tard.
+
+Ce qui est sauve : la file des etapes restantes, la position, les scores et
+les XP de la session. Les notes des cartes, elles, etaient deja enregistrees
+au fil de l'eau — meme en cas de crash, les expressions validees restent acquises.
+
+La pause vit dans `state.pending`, donc elle est **par profil** : chacun peut
+avoir la sienne en cours.

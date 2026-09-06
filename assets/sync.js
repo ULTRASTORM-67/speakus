@@ -12,6 +12,15 @@
 (function (global) {
   'use strict';
 
+  // Un document par profil, nommé d'après le prénom : le "Benjamin" du
+  // téléphone et celui du PC pointent sur le même. Sans ça, deux appareils
+  // aux profils différents s'écraseraient l'un l'autre.
+  function pathFor(name) {
+    var slug = String(name || 'main').toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    return 'progress/' + (slug || 'main');
+  }
   var PATH = 'progress/main';
   var doc = null, ready = false, timer = null;
   var getState = null, adopt = null, canAdopt = null;
@@ -37,6 +46,7 @@
     getState = opts.getState;
     adopt = opts.adopt;
     canAdopt = opts.canAdopt || function () { return true; };
+    PATH = pathFor(opts.profile);
 
     if (!global.claude || typeof global.claude.use !== 'function') {
       setStatus('local');

@@ -491,6 +491,24 @@
         'Tu peux quand même réviser en mode écrit.</div>';
     }
 
+    // Une session laissée en cours passe avant tout le reste.
+    var pend = pendingSession();
+    if (pend) {
+      var reste = pend.steps.length - pend.i;
+      var faits = Math.round(pend.i / pend.steps.length * 100);
+      html += '<div class="card glow" style="border-color:rgba(255,184,77,.4)">' +
+        '<div class="eyebrow" style="color:var(--warn)">⏸ Session en pause' +
+        (pend.d && pend.d !== TODAY ? ' &nbsp;·&nbsp; commencée le ' + fmtDate(pend.d) : '') + '</div>' +
+        '<h1 style="font-size:24px">Tu étais à l\'étape ' + (pend.i + 1) + ' sur ' + pend.steps.length + '</h1>' +
+        '<div class="bar" style="margin:14px 0 10px"><i style="width:' + faits + '%"></i></div>' +
+        '<p>Il te reste ' + reste + ' étape' + (reste > 1 ? 's' : '') + '. ' +
+        'Ce que tu as déjà validé est enregistré.</p>' +
+        '<div class="btnrow" style="margin-top:16px">' +
+        '<button class="btn primary" id="btnResume" style="flex:1">▶︎ Reprendre</button>' +
+        '<button class="btn ghost sm" id="btnDrop">Abandonner</button>' +
+        '</div></div>';
+    }
+
     html += '<div class="card hero glow">' +
       '<div class="eyebrow">Jour ' + dayNumber() + ' / ' + totalDays() + ' &nbsp;·&nbsp; ' + esc(monthLbl) + '</div>' +
       '<h1>' + esc(theme) + '</h1>' +
@@ -532,7 +550,22 @@
 
     app.innerHTML = html + nav('home');
     bindNav(); bindSay();
-    on('#btnStart', 'click', function () { startSession(doneToday); });
+    on('#btnStart', 'click', function () {
+      // Démarrer une nouvelle session écrase celle en pause : on prévient.
+      if (pendingSession() && !confirm('Tu as une session en pause. Démarrer une nouvelle session va l\'abandonner. Continuer ?')) return;
+      clearSession();
+      startSession(doneToday);
+    });
+    on('#btnResume', 'click', function () {
+      // Si plus rien n'est reprenable (corpus modifié entre-temps), on ne
+      // laisse pas l'utilisateur devant un bouton qui ne fait rien.
+      if (!resumeSession()) { toast('Cette session n\'est plus reprenable'); renderHome(); }
+    });
+    on('#btnDrop', 'click', function () {
+      if (confirm('Abandonner la session en pause ? Les expressions déjà validées restent acquises.')) {
+        clearSession(); renderHome();
+      }
+    });
   }
   // découverte ~40s, shadowing ~25s, production ~25s, roleplay ~30s, révision ~16s
   function estimateMinutes(nw, rv) {
@@ -580,7 +613,11 @@
     }
     app.innerHTML = html + nav('review');
     bindNav(); bindSay();
-    on('#btnRev', 'click', function () { startSession(false, true); });
+    on('#btnRev', 'click', function () {
+      if (pendingSession() && !confirm('Tu as une session en pause. La lancer maintenant va l\'abandonner. Continuer ?')) return;
+      clearSession();
+      startSession(false, true);
+    });
   }
   function boxdots(b) {
     var s = '<div class="boxdots">';
@@ -706,6 +743,15 @@
       '</select></div>' +
       '<div class="row"><div class="lb">Date de départ aux USA<small>Pilote le compte à rebours</small></div>' +
       '<input type="date" id="sTrip" value="' + esc(S.settings.tripDate || '') + '"></div>' +
+      '<div class="row" style="display:block"><div class="lb" style="margin-bottom:8px">Correcteur' +
+      '<small>Explique ce que TA phrase veut dire quand elle sort du modèle. ' +
+      'Adresse du relais — laisse vide si tu n\'en as pas.</small></div>' +
+      '<input type="text" id="sCoach" placeholder="https://speakus-coach....workers.dev" ' +
+      'value="' + esc(window.Coach ? Coach.endpoint() : '') + '" ' +
+      'style="width:100%;background:var(--surface2);border:1px solid var(--line2);color:var(--txt);' +
+      'border-radius:10px;padding:9px 11px;outline:none;font-size:13px">' +
+      '<div class="btnrow" style="margin-top:9px"><button class="btn ghost sm" id="sCoachTest">Tester</button>' +
+      '<span id="sCoachOut" class="muted" style="font-size:13px;align-self:center"></span></div></div>' +
       '<div class="row"><div class="lb">Exigence de prononciation<small>Souple au début, strict ensuite</small></div>' +
       '<select id="sTh">' +
       '<option value="0.62"' + (S.settings.threshold === 0.62 ? ' selected' : '') + '>Souple</option>' +
@@ -737,6 +783,21 @@
     $('#sNew', m).addEventListener('change', function () { S.settings.newPerDay = +this.value; save(); });
     $('#sShadow', m).addEventListener('change', function () { S.settings.shadowing = this.value === '1'; save(); });
     $('#sTrip', m).addEventListener('change', function () { S.settings.tripDate = this.value; save(); });
+    $('#sCoach', m).addEventListener('change', function () {
+      if (window.Coach) Coach.setEndpoint(this.value.trim());
+    });
+    $('#sCoachTest', m).addEventListener('click', function () {
+      var url = $('#sCoach', m).value.trim();
+      var out = $('#sCoachOut', m);
+      if (!url) { out.textContent = 'Colle d\'abord une adresse.'; return; }
+      Coach.setEndpoint(url);
+      out.textContent = 'Test en cours…';
+      Coach.test(url).then(function (v) {
+        out.innerHTML = v && v.verdict
+          ? '<span style="color:var(--ok)">✓ Le correcteur répond : « ' + esc(v.correction) + ' »</span>'
+          : '<span style="color:var(--bad)">✗ Pas de réponse — voir worker/DEPLOIEMENT.md</span>';
+      });
+    });
     $('#sTh', m).addEventListener('change', function () { S.settings.threshold = +this.value; save(); });
     $('#sMax', m).addEventListener('change', function () { S.settings.maxReview = Math.max(5, Math.min(60, +this.value || 16)); save(); });
     $('#sRate', m).addEventListener('change', function () { S.settings.rate = +this.value; save(); Speech.speak('Alright, let me try this voice.', { rate: S.settings.rate }); });
@@ -790,6 +851,54 @@
   /* ================= SESSION ================= */
   var SES = null;
 
+  /* ---- Session en pause ----
+     Les notes des cartes sont deja enregistrees au fil des etapes (nextStep
+     appelle save()). Ce qui se perdait en fermant l'onglet, c'etait la file
+     d'etapes restantes et le compteur de la session. On la serialise donc a
+     chaque etape : on garde les identifiants, pas les objets du corpus. */
+  function saveSession() {
+    if (!SES) return;
+    S.pending = {
+      d: TODAY, at: Date.now(),
+      steps: SES.steps.map(function (s) { return { t: s.t, id: s.it.id }; }),
+      i: SES.i,
+      newIds: SES.newIds.slice(),
+      scores: SES.scores.slice(),
+      xp: SES.xp, nw: SES.nw, rv: SES.rv,
+      bonus: SES.bonus, reviewOnly: SES.reviewOnly
+    };
+    save();
+  }
+  function clearSession() {
+    if (S.pending) { delete S.pending; save(); }
+  }
+  /** La session en pause est-elle encore reprenable ? */
+  function pendingSession() {
+    var p = S.pending;
+    if (!p || !p.steps || !p.steps.length) return null;
+    if (p.i >= p.steps.length) return null;
+    return p;
+  }
+  function resumeSession() {
+    var p = pendingSession();
+    if (!p) return false;
+    var steps = [];
+    p.steps.forEach(function (s) {
+      var it = BY_ID[s.id];
+      if (it) steps.push({ t: s.t, it: it });   // une expression retiree du corpus saute
+    });
+    if (!steps.length) { clearSession(); return false; }
+    SES = {
+      steps: steps, i: Math.min(p.i, steps.length - 1),
+      newIds: p.newIds || [], scores: p.scores || [],
+      xp: p.xp || 0, nw: p.nw || 0, rv: p.rv || 0,
+      attempts: 0, revealed: false,
+      bonus: !!p.bonus, reviewOnly: !!p.reviewOnly
+    };
+    renderStep();
+    return true;
+  }
+
   function startSession(bonus, reviewOnly) {
     var reviews = dueList().slice(0, S.settings.maxReview);
     var news = reviewOnly ? [] : nextNewItems(S.settings.newPerDay);
@@ -811,6 +920,7 @@
       scores: [], xp: 0, nw: news.length, rv: reviews.length,
       attempts: 0, revealed: false, bonus: !!bonus, reviewOnly: !!reviewOnly
     };
+    saveSession();
     renderStep();
   }
 
@@ -903,7 +1013,12 @@
     app.innerHTML = html;
     bindSay();
 
-    on('#btnQuit', 'click', function () { Speech.stopSpeaking(); Speech.abort(); SES = null; go('home'); });
+    on('#btnQuit', 'click', function () {
+      Speech.stopSpeaking(); Speech.abort();
+      saveSession();               // fermer = mettre en pause, pas abandonner
+      SES = null; go('home');
+      toast('Session mise en pause — tu pourras reprendre où tu en étais');
+    });
     on('#btnSlow', 'click', function () { Speech.speak(targetText(st), { rate: 0.6 }); });
     on('#btnNative', 'click', function () { Speech.speak(it.ex, { rate: 1.08 }); });
     on('#mic', 'click', function () { doListen(st); });
@@ -1130,6 +1245,13 @@
     on('#fbPass', 'click', function () { nextStep(false); });
     on('#fbNext', 'click', function () { nextStep(true, r.score); });
 
+    // Phrase libre rejetée par le score local : on demande un vrai avis de langue.
+    // En découverte et en shadowing, l'exercice est de reproduire — rien à juger.
+    if (!pass && st.t !== 'learn' && st.t !== 'shadow' &&
+        window.Coach && Coach.alive()) {
+      askCoach(st, r.text || hyps[0], target);
+    }
+
     if (pass) {
       // « Compris mais incomplet » : on continue, mais on laisse la porte ouverte
       // à un deuxième essai propre avant de passer à la suite.
@@ -1147,6 +1269,82 @@
       var gained = { learn: 10, review: 6, shadow: 9, produce: 8, roleplay: 12 }[st.t] * (perfect ? 1.5 : 1);
       SES.xp += Math.round(gained);
       if (perfect) toast('+' + Math.round(gained) + ' XP — nickel !');
+    }
+  }
+
+  /* ---- Le correcteur : juge la phrase que l'utilisateur a réellement dite ---- */
+  var COACH_STYLE = {
+    natural:    { cls: 'good', icon: '✅', head: 'Ta phrase est juste' },
+    awkward:    { cls: 'mid',  icon: '🟠', head: 'Compréhensible, mais pas naturel' },
+    wrong:      { cls: 'bad',  icon: '❌', head: 'Pas correct' },
+    misheard:   { cls: 'mid',  icon: '🎧', head: 'La reconnaissance vocale a mal entendu' }
+  };
+
+  function askCoach(st, said, target) {
+    var fb = $('#fb');
+    if (!fb) return;
+    var box = document.createElement('div');
+    box.className = 'coach';
+    box.innerHTML = '<div class="coach-load">Analyse de ta phrase<span class="dots"><i></i><i></i><i></i></span></div>';
+    fb.appendChild(box);
+
+    Coach.judge({
+      fr: st.it.fr,
+      sit: st.t === 'produce' ? st.it.sit : '',
+      target: target,
+      said: said
+    }).then(function (v) {
+      if (!v) { box.remove(); return; }
+      renderCoach(box, v, st, said, target);
+    }).catch(function () { box.remove(); });
+  }
+
+  function renderCoach(box, v, st, said, target) {
+    var sty = COACH_STYLE[v.verdict];
+    var sameAsTarget = Speech.normalize(v.correction) === Speech.normalize(target);
+
+    var html = '<div class="coach-verdict ' + sty.cls + '">' +
+      '<span class="coach-icon">' + sty.icon + '</span>' +
+      '<div><b>' + sty.head + '</b>' +
+      (v.note ? '<small>' + esc(v.note) + '</small>' : '') + '</div></div>';
+
+    // 1. Ce qu'il a dit, et ce que ça veut dire
+    html += '<div class="coach-row"><div class="lbl">Tu as dit</div>' +
+      '<div class="coach-said">« ' + esc(said) + ' »</div>' +
+      (v.meaning ? '<div class="coach-mean">→ ' + esc(v.meaning) + '</div>' : '') + '</div>';
+
+    // 2. Ce qu'il faut dire
+    if (v.verdict !== 'natural') {
+      html += '<div class="coach-row fix"><div class="lbl">À dire plutôt</div>' +
+        '<div class="coach-fix">' + esc(v.correction) +
+        ' <button class="play" data-say="' + esc(v.correction) + '">🔊</button></div>' +
+        (sameAsTarget ? '' :
+          '<div class="coach-mean">La phrase du jour : « ' + esc(target) + ' »</div>') +
+        '</div>' + phonBlock(v.correction, 'coachPhon');
+    }
+
+    box.innerHTML = html;
+    bindSay();
+    if (v.verdict !== 'natural') bindPhon('coachPhon');
+
+    // Tu as dit une AUTRE phrase que celle attendue : la noter mot à mot
+    // contre le modèle n'apprend rien et contredit l'analyse. On l'enlève.
+    // Exception : « mal entendu » — là, c'est bien un souci de prononciation.
+    if (v.verdict !== 'misheard') {
+      var fb = $('#fb');
+      var heard = fb && fb.querySelector('.heard');
+      var score = fb && fb.querySelector('.scorebox');
+      if (heard) heard.remove();
+      if (score) score.remove();
+    }
+
+    // Formulation valable : on valide, l'exercice est réussi.
+    if (v.verdict === 'natural') {
+      var ctrls = $('#fb .btnrow');
+      if (ctrls) {
+        ctrls.innerHTML = '<button class="btn ok block" id="fbNext">Continuer →</button>';
+        on('#fbNext', 'click', function () { nextStep(true); });
+      }
     }
   }
 
@@ -1176,10 +1374,12 @@
     }
     save();
     SES.i++;
+    saveSession();
     renderStep();
   }
 
   function finishSession() {
+    clearSession();
     var avg = SES.scores.length ? Math.round(SES.scores.reduce(function (a, b) { return a + b; }, 0) / SES.scores.length) : 0;
     S.xp += SES.xp;
 
@@ -1246,7 +1446,8 @@
     window.Sync.init({
       getState: function () { return S; },
       adopt: adoptRemote,
-      canAdopt: function () { return !SES; }   // jamais en pleine session
+      canAdopt: function () { return !SES; },  // jamais en pleine session
+      profile: (activeProfile() || {}).name    // un document par prénom
     });
   }
   if (S.settings.voice) setTimeout(function () { Speech.setVoice(S.settings.voice); }, 600);
