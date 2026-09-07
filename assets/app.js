@@ -156,6 +156,7 @@
     return {
       created: ymd(new Date()),
       cards: {},          // id -> {b:box, due:'YYYY-MM-DD', seen:n, ok:n, ko:n, last:score}
+      custom: [],         // les expressions ajoutées à la main par l'utilisateur
       learned: 0,         // nb d'expressions déjà distribuées
       history: [],        // [{d, nw, rv, acc, xp}]
       streak: 0, best: 0, lastSession: null,
@@ -168,6 +169,55 @@
     };
   }
   var S = load();
+
+  /* ================= MES EXPRESSIONS =================
+     Celles que l'utilisateur ajoute lui-même (entendues en cours, dans une
+     série, dans la rue). Elles vivent HORS de CORPUS : `S.learned` est un
+     index dans CORPUS, et y insérer quoi que ce soit décalerait toute la
+     progression du programme. Elles sont juste enregistrées dans BY_ID pour
+     que les révisions et les sessions sachent les retrouver, et injectées en
+     tête de la prochaine session. */
+  var OWN_THEME = 'Mes expressions';
+  var OWN = [];
+
+  function registerOwn(o) {
+    var it = {
+      id: o.id, en: o.en, fr: o.fr, ex: o.ex || '', sit: o.sit || '',
+      cue: o.cue || '', lv: o.lv || 'perso', rg: o.rg || 'casual',
+      th: OWN_THEME, month: 0, packTitle: OWN_THEME, own: true
+    };
+    OWN.push(it);
+    BY_ID[it.id] = it;
+    (BY_THEME[OWN_THEME] = BY_THEME[OWN_THEME] || []).push(it);
+    return it;
+  }
+  function loadOwn() {
+    OWN = [];
+    if (BY_THEME[OWN_THEME]) BY_THEME[OWN_THEME] = [];
+    (S.custom || []).forEach(registerOwn);
+  }
+  function addOwn(data) {
+    if (!S.custom) S.custom = [];
+    var o = {
+      id: 'own-' + Date.now().toString(36) + Math.floor(Math.random() * 1000),
+      en: data.en, fr: data.fr, ex: data.ex || '', sit: data.sit || '',
+      cue: data.cue || '', at: TODAY
+    };
+    S.custom.push(o);
+    save();
+    return registerOwn(o);
+  }
+  function removeOwn(id) {
+    S.custom = (S.custom || []).filter(function (o) { return o.id !== id; });
+    delete S.cards[id];
+    save();
+    loadOwn();
+  }
+  /** Mes expressions jamais encore travaillées : elles passent en priorité. */
+  function ownPending() {
+    return OWN.filter(function (it) { return !S.cards[it.id]; });
+  }
+  loadOwn();
 
   // Migration : passage au rythme 20 min/jour + vraie date de départ
   if (!S.v) {
@@ -213,6 +263,16 @@
   function addDays(d, n) { var x = new Date(d.getTime()); x.setDate(x.getDate() + n); return x; }
   function daysBetween(a, b) { return Math.round((parseYmd(b) - parseYmd(a)) / DAY); }
   var TODAY = ymd(new Date());
+
+  /* Sur téléphone, l'app reste ouverte des jours entiers : sans ça, TODAY
+     restait figé au jour du chargement. Les révisions du lendemain
+     n'apparaissaient jamais et la série se cassait toute seule. */
+  function refreshToday() {
+    var t = ymd(new Date());
+    if (t === TODAY) return false;
+    TODAY = t;
+    return true;
+  }
 
   /* ================= SRS ================= */
   function card(id) {
@@ -631,12 +691,15 @@
     var html = header() +
       '<input class="search" id="q" placeholder="Chercher une expression, un mot, une traduction…" value="' + esc(libQuery) + '">' +
       '<div class="btnrow" style="margin-bottom:14px">' +
-      ['seen', 'weak', 'mastered', 'all'].map(function (f) {
-        var lbl = { seen: 'Apprises', weak: 'Fragiles', mastered: 'Maîtrisées', all: 'Tout le programme' }[f];
+      ['seen', 'weak', 'mastered', 'own', 'all'].map(function (f) {
+        var lbl = { seen: 'Apprises', weak: 'Fragiles', mastered: 'Maîtrisées',
+                    own: '⭐ Les miennes', all: 'Tout le programme' }[f];
         return '<button class="btn sm ' + (libFilter === f ? 'primary' : 'ghost') + '" data-f="' + f + '">' + lbl + '</button>';
-      }).join('') + '</div>';
+      }).join('') +
+      '<button class="btn ok sm" id="btnAddOwn">＋ Ajouter</button></div>';
 
-    var list = CORPUS.filter(function (it) {
+    var list = OWN.concat(CORPUS).filter(function (it) {
+      if (libFilter === 'own' && !it.own) return false;
       var c = S.cards[it.id];
       if (libFilter === 'seen' && !c) return false;
       if (libFilter === 'weak' && (!c || c.b >= 3)) return false;
@@ -652,10 +715,14 @@
     html += '<div class="list">';
     list.slice(0, 400).forEach(function (it) {
       var c = S.cards[it.id];
-      html += '<div class="item"><div class="m"><div class="en">' + esc(it.en) + '</div>' +
+      html += '<div class="item"' + (it.own ? ' style="border-color:rgba(49,217,122,.35)"' : '') + '>' +
+        '<div class="m"><div class="en">' + (it.own ? '⭐ ' : '') + esc(it.en) + '</div>' +
         '<div class="fr">' + esc(it.fr) + '</div></div>' +
         (c ? boxdots(c.b) : '<span class="lvl">' + esc(it.lv) + '</span>') +
-        '<button class="play" data-say="' + esc(it.en) + '">🔊</button></div>';
+        '<button class="play" data-drill="' + esc(it.id) + '" title="Travailler maintenant">🎙️</button>' +
+        '<button class="play" data-say="' + esc(it.en) + '">🔊</button>' +
+        (it.own ? '<button class="play" data-del="' + esc(it.id) + '" title="Supprimer">🗑</button>' : '') +
+        '</div>';
     });
     html += '</div>';
     if (list.length > 400) html += '<div class="muted center" style="margin-top:12px">…affine ta recherche pour voir la suite</div>';
@@ -665,6 +732,23 @@
     $$('[data-f]').forEach(function (b) {
       b.addEventListener('click', function () { libFilter = b.getAttribute('data-f'); renderLibrary(); });
     });
+    on('#btnAddOwn', 'click', openAddOwn);
+    $$('[data-drill]').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var it = BY_ID[b.getAttribute('data-drill')];
+        if (it) drill([it]);
+      });
+    });
+    $$('[data-del]').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var it = BY_ID[b.getAttribute('data-del')];
+        if (it && confirm('Supprimer « ' + it.en +' » ? Sa progression sera perdue.')) {
+          removeOwn(it.id); toast('Expression supprimée'); renderLibrary();
+        }
+      });
+    });
     var q = $('#q');
     q.addEventListener('input', function () {
       libQuery = q.value;
@@ -672,6 +756,65 @@
         var pos = q.selectionStart; renderLibrary();
         var nq = $('#q'); nq.focus(); try { nq.setSelectionRange(pos, pos); } catch (e) {}
       }, 220);
+    });
+  }
+
+  /* ---- Ajouter une expression à soi ----
+     Deux champs suffisent pour que l'expression entre dans le cycle
+     (découverte + révisions espacées). Les deux autres débloquent le
+     shadowing et la mise en situation : on le dit, on ne l'impose pas. */
+  function openAddOwn() {
+    var m = document.createElement('div');
+    m.className = 'modal';
+    function champ(id, lbl, ph, aide) {
+      return '<div style="margin-bottom:13px">' +
+        '<div class="lb" style="font-size:13px;margin-bottom:5px">' + lbl +
+        (aide ? '<small>' + aide + '</small>' : '') + '</div>' +
+        '<input type="text" id="' + id + '" placeholder="' + esc(ph) + '" ' +
+        'style="width:100%;background:var(--surface2);border:1px solid var(--line2);color:var(--txt);' +
+        'border-radius:10px;padding:11px 12px;outline:none"></div>';
+    }
+    m.innerHTML = '<div class="box"><h3 style="margin-bottom:5px">Ajouter une expression</h3>' +
+      '<div class="muted" style="margin-bottom:16px">Elle passera en priorité dès ta prochaine session.</div>' +
+      champ('aEn', 'L\'expression en anglais', 'to catch up on something') +
+      champ('aFr', 'Ce que ça veut dire', 'rattraper son retard sur quelque chose') +
+      champ('aEx', 'Une phrase avec, si tu l\'as', 'I need to catch up on my emails.',
+            'Débloque le shadowing — la répétition au débit natif.') +
+      champ('aSit', 'La situation, en français', 'Tu expliques pourquoi tu ne peux pas sortir.',
+            'Débloque la mise en situation à l\'oral.') +
+      '<div id="aErr" style="color:var(--bad);font-size:13px;min-height:18px"></div>' +
+      '<div class="btnrow" style="margin-top:10px">' +
+      '<button class="btn ok" id="aSave" style="flex:1">Ajouter</button>' +
+      '<button class="btn ghost sm" id="aCancel">Annuler</button></div></div>';
+    document.body.appendChild(m);
+    setTimeout(function () { try { $('#aEn', m).focus(); } catch (e) {} }, 60);
+
+    function fermer() { m.remove(); }
+    $('#aCancel', m).addEventListener('click', fermer);
+    m.addEventListener('click', function (e) { if (e.target === m) fermer(); });
+
+    $('#aSave', m).addEventListener('click', function () {
+      var en = $('#aEn', m).value.trim();
+      var fr = $('#aFr', m).value.trim();
+      var err = $('#aErr', m);
+      if (!en || !fr) { err.textContent = 'Il faut au moins l\'expression et sa traduction.'; return; }
+      var doublon = OWN.concat(CORPUS).filter(function (o) {
+        return Speech.normalize(o.en) === Speech.normalize(en);
+      })[0];
+      if (doublon) {
+        err.textContent = doublon.own
+          ? 'Tu l\'as déjà ajoutée.'
+          : 'Elle est déjà dans le programme (' + doublon.th + ').';
+        return;
+      }
+      var it = addOwn({ en: en, fr: fr, ex: $('#aEx', m).value.trim(), sit: $('#aSit', m).value.trim() });
+      fermer();
+      toast('« ' + it.en + ' » ajoutée');
+      // Sans ça elle serait invisible : le filtre par défaut ne montre que
+      // les expressions déjà travaillées, et celle-ci vient d'arriver.
+      libFilter = 'own';
+      if (confirm('Ajoutée. Tu veux la travailler tout de suite ?')) drill([it]);
+      else renderLibrary();
     });
   }
 
@@ -857,7 +1000,7 @@
      d'etapes restantes et le compteur de la session. On la serialise donc a
      chaque etape : on garde les identifiants, pas les objets du corpus. */
   function saveSession() {
-    if (!SES) return;
+    if (!SES || SES.drill) return;   // un drill ponctuel n'ecrase pas la session en pause
     S.pending = {
       d: TODAY, at: Date.now(),
       steps: SES.steps.map(function (s) { return { t: s.t, id: s.it.id }; }),
@@ -904,6 +1047,15 @@
     var news = reviewOnly ? [] : nextNewItems(S.settings.newPerDay);
     if (bonus && !reviewOnly) news = nextNewItems(S.settings.newPerDay);
 
+    // Ce que l'utilisateur a ajouté lui-même passe devant le programme :
+    // il l'a noté parce qu'il en a besoin maintenant.
+    if (!reviewOnly) {
+      var mine = ownPending();
+      if (mine.length) {
+        news = mine.concat(news).slice(0, Math.max(S.settings.newPerDay, mine.length));
+      }
+    }
+
     if (!reviews.length && !news.length) { toast('Rien à faire pour le moment 👌'); return; }
 
     var steps = [];
@@ -921,6 +1073,27 @@
       attempts: 0, revealed: false, bonus: !!bonus, reviewOnly: !!reviewOnly
     };
     saveSession();
+    renderStep();
+  }
+
+  /** Travailler tout de suite une expression précise, hors session du jour. */
+  function drill(items) {
+    if (!items || !items.length) return;
+    if (pendingSession() && !confirm('Tu as une session en pause. La reprendre sera toujours possible après. Continuer ?')) return;
+    var steps = [];
+    items.forEach(function (it) { steps.push({ t: 'learn', it: it }); });
+    if (S.settings.shadowing) {
+      items.forEach(function (it) { if (it.ex) steps.push({ t: 'shadow', it: it }); });
+    }
+    items.forEach(function (it) { if (it.sit) steps.push({ t: 'produce', it: it }); });
+    // On garde la session en pause intacte : un drill ne l'ecrase pas.
+    var garde = S.pending;
+    SES = {
+      steps: steps, i: 0, newIds: items.map(function (x) { return x.id; }),
+      scores: [], xp: 0, nw: items.length, rv: 0,
+      attempts: 0, revealed: false, bonus: true, reviewOnly: false, drill: true
+    };
+    S.pending = garde;
     renderStep();
   }
 
@@ -1379,7 +1552,7 @@
   }
 
   function finishSession() {
-    clearSession();
+    if (!SES.drill) clearSession();   // idem : le drill laisse la pause tranquille
     var avg = SES.scores.length ? Math.round(SES.scores.reduce(function (a, b) { return a + b; }, 0) / SES.scores.length) : 0;
     S.xp += SES.xp;
 
@@ -1450,6 +1623,12 @@
       profile: (activeProfile() || {}).name    // un document par prénom
     });
   }
+  // Retour au premier plan : on verifie qu'on n'a pas change de jour entre-temps.
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) return;
+    if (refreshToday() && !SES) { toast('Nouveau jour — tes révisions sont prêtes'); go('home'); }
+  });
+
   if (S.settings.voice) setTimeout(function () { Speech.setVoice(S.settings.voice); }, 600);
   if (PROFILES.needsName) { renderWelcome(); }
   else if (!CORPUS.length) {

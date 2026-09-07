@@ -45,6 +45,16 @@ input,select{font-family:inherit;font-size:inherit}
 .chip b{color:var(--txt)}
 .chip.fire{background:linear-gradient(135deg,rgba(255,138,60,.22),rgba(255,92,108,.16));border-color:rgba(255,138,60,.35);color:#FFCFA8}
 .chip.ok{background:rgba(49,217,122,.14);border-color:rgba(49,217,122,.32);color:#8DEBB6}
+
+/* Sur telephone la barre du haut debordait sur deux lignes : on resserre,
+   et le nom du logo s'efface avant que quoi que ce soit ne saute a la ligne. */
+@media(max-width:520px){
+  .hdr{gap:6px;flex-wrap:nowrap}
+  .hdr .logo span:last-child{display:none}
+  .hdr .chip{padding:6px 9px;font-size:12.5px;white-space:nowrap}
+  .hdr .iconbtn{width:34px;height:34px;font-size:15px;flex-shrink:0}
+  .hdr .logo .dot{width:28px;height:28px;border-radius:9px;font-size:14px}
+}
 .chip.warn{background:rgba(255,184,77,.14);border-color:rgba(255,184,77,.32);color:#FFD79E}
 .iconbtn{width:38px;height:38px;border-radius:12px;background:var(--surface);border:1px solid var(--line);display:grid;place-items:center;font-size:17px;color:var(--txt2)}
 .iconbtn:hover{background:var(--surface2);color:var(--txt)}

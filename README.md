@@ -141,7 +141,7 @@ Consequence : ne vide pas les donnees du site, et exporte de temps en temps.
 Dans les reglages : **Exporter** produit un .json, **Importer** le recharge.
 Utile pour transferer la progression a la main si la synchro ne marche pas.
 
-## Ajouter des expressions
+## Ajouter des expressions au programme (fichiers source)
 
 Les fichiers `data/m1.js` a `data/m6.js` contiennent le corpus.
 Format d'une entree :
@@ -201,3 +201,28 @@ au fil de l'eau — meme en cas de crash, les expressions validees restent acqui
 
 La pause vit dans `state.pending`, donc elle est **par profil** : chacun peut
 avoir la sienne en cours.
+
+## Ajouter mes propres expressions
+
+Onglet **Expressions** -> bouton **＋ Ajouter**. Deux champs suffisent :
+l'expression en anglais et ce qu'elle veut dire.
+
+Les deux autres champs sont optionnels mais debloquent des etapes :
+- **une phrase avec** -> debloque le shadowing (repetition au debit natif)
+- **la situation en francais** -> debloque la mise en situation a l'oral
+
+Ce que tu ajoutes **passe en priorite** dans la prochaine session, avant le
+programme : tu l'as notee parce que t'en as besoin maintenant. Ensuite ca
+suit les memes revisions espacees que le reste.
+
+Chaque ligne de la bibliotheque a un bouton 🎙️ **Travailler maintenant** :
+une mini-session sur cette seule expression, sans toucher a la session du
+jour ni a une session en pause.
+
+Les tiennes sont marquees ⭐ et se suppriment avec 🗑. Filtre **⭐ Les miennes**
+pour ne voir qu'elles.
+
+Techniquement : elles vivent dans `state.custom`, **hors de `CORPUS`**.
+`S.learned` est un index dans `CORPUS` — y inserer quoi que ce soit
+decalerait toute la progression du programme. Elles sont juste enregistrees
+dans `BY_ID` pour que les revisions les retrouvent.
