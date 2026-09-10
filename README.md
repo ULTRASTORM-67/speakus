@@ -3,17 +3,6 @@
 Application d'anglais americain avec entrainement oral quotidien.
 900 expressions, 113 jours de programme, du B1 au C1.
 
-## Aussi dans ce depot : PUMP
-
-Une deuxieme application, independante : entrainement des bras a la maison
-(biceps, triceps, avant-bras), 22 exercices notes par efficacite, schemas
-animes, programmes et guide de nourriture.
-
-**https://ultrastorm-67.github.io/speakus/pump/**
-
-Elle vit dans le dossier `pump/`, avec son propre stockage et sa propre
-documentation : voir `pump/README.md`. Elle ne touche a rien de SpeakUS.
-
 ## Deux facons de l'utiliser
 
 ### En ligne (PC + telephone) — recommande
